@@ -1,7 +1,8 @@
 // Loaded by the web export (export_presets.cfg head_include) before the engine starts.
 // 1. Caps the render resolution: iPhones report a pixel ratio of 3, which with 3D
 //    anti-aliasing can exhaust Safari's graphics memory. ?dpr=1|2|3 overrides the cap.
-// 2. Stops Safari's own page pinch-zoom and double-tap zoom, which fight the game's pinch.
+// 2. Stops the browser's own page pinch-zoom and double-tap zoom (they fight the game's
+//    pinch and can crop the game), and snaps the page back if it zooms anyway.
 // 3. Only on the home network (or with ?debug): sends console output, errors, WebGL
 //    context loss and a heartbeat (frames per second) to the server's /log, so a phone can
 //    be debugged from the Mac. Published builds (itch.io) send nothing.
@@ -17,7 +18,32 @@
   document.addEventListener("touchmove", function (e) { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
   var vp = document.querySelector('meta[name="viewport"]');
   if (!vp) { vp = document.createElement("meta"); vp.name = "viewport"; document.head.appendChild(vp); }
-  vp.content = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+  var VIEWPORT = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
+  vp.content = VIEWPORT;
+  // iPhone browsers ignore user-scalable=no (accessibility), so a stray pinch or double tap
+  // can zoom the whole page and crop the game on both sides (seen in Brave, 2026-10-10).
+  // Pin the page, stop page zoom gestures everywhere, and undo any zoom that gets through.
+  var css = document.createElement("style");
+  css.textContent = "html,body{position:fixed;inset:0;margin:0;overflow:hidden;touch-action:none;" +
+    "overscroll-behavior:none;-webkit-text-size-adjust:100%;-webkit-user-select:none;user-select:none;" +
+    "-webkit-touch-callout:none}canvas{touch-action:none}";
+  document.head.appendChild(css);
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); }, { passive: false });
+  var lastTouchEnd = 0;
+  document.addEventListener("touchend", function (e) {
+    var now = Date.now();
+    if (now - lastTouchEnd < 300) e.preventDefault();  // a quick second tap would zoom the page
+    lastTouchEnd = now;
+  }, { passive: false });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () {
+      if (window.visualViewport.scale > 1.01) {
+        // Re-applying the viewport makes WebKit snap back to scale 1.
+        vp.content = VIEWPORT.replace("maximum-scale=1", "maximum-scale=1.0001");
+        setTimeout(function () { vp.content = VIEWPORT; }, 50);
+      }
+    });
+  }
   var t0 = Date.now();
   var lan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost$|127\.)/.test(location.hostname);
   if (!lan && !q.has("debug")) return;

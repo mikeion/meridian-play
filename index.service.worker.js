@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1791662066|3367189';
+const CACHE_VERSION = '1791663315|4303514';
 /** @type {string} */
 const CACHE_PREFIX = 'Meridian-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
