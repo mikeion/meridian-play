@@ -44,6 +44,23 @@
       }
     });
   }
+  // ?debug: a small overlay with the sizes the browser reports, for layout bugs on phones.
+  if (q.has("debug")) {
+    var box = document.createElement("div");
+    box.style.cssText = "position:fixed;left:4px;bottom:4px;z-index:9999;background:rgba(0,0,0,.75);color:#0f0;" +
+      "font:11px/1.3 monospace;padding:4px 6px;border-radius:4px;pointer-events:none;white-space:pre";
+    document.addEventListener("DOMContentLoaded", function () { document.body.appendChild(box); });
+    setInterval(function () {
+      var c = document.querySelector("canvas");
+      var r = c ? c.getBoundingClientRect() : null;
+      var vv = window.visualViewport;
+      box.textContent = "inner " + innerWidth + "x" + innerHeight + "  screen " + screen.width + "x" + screen.height +
+        "\nvv " + (vv ? Math.round(vv.width) + "x" + Math.round(vv.height) + " scale " + vv.scale.toFixed(2) : "none") +
+        "  dpr real " + real + " used " + dpr +
+        "\ncanvas " + (c ? c.width + "x" + c.height + " css " + Math.round(r.width) + "x" + Math.round(r.height) + " at " + Math.round(r.left) + "," + Math.round(r.top) : "none") +
+        "\nstandalone " + (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
+    }, 500);
+  }
   var t0 = Date.now();
   var lan = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|localhost$|127\.)/.test(location.hostname);
   if (!lan && !q.has("debug")) return;
