@@ -58,7 +58,8 @@
         "\nvv " + (vv ? Math.round(vv.width) + "x" + Math.round(vv.height) + " scale " + vv.scale.toFixed(2) : "none") +
         "  dpr real " + real + " used " + dpr +
         "\ncanvas " + (c ? c.width + "x" + c.height + " css " + Math.round(r.width) + "x" + Math.round(r.height) + " at " + Math.round(r.left) + "," + Math.round(r.top) : "none") +
-        "\nstandalone " + (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
+        "\nstandalone " + (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) +
+        "\n" + (window.godotFit || "godot: not reported yet");
     }, 500);
   }
   var t0 = Date.now();
