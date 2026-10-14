@@ -44,6 +44,34 @@
       }
     });
   }
+  // Memory for ?debug and the home-network log: the engine's WebAssembly memory (it only
+  // grows) and, in Chromium, the JS heap. Each heartbeat is kept in localStorage; a page
+  // that was killed (iOS reloads a tab that used too much memory) never gets its pagehide,
+  // so the next load can say what memory looked like just before it died.
+  var wasmMem = null;
+  ["instantiate", "instantiateStreaming"].forEach(function (k) {
+    var orig = WebAssembly[k];
+    if (!orig) return;
+    WebAssembly[k] = function () {
+      return orig.apply(WebAssembly, arguments).then(function (r) {
+        var ex = (r.instance || r).exports || {};
+        for (var n in ex) if (ex[n] instanceof WebAssembly.Memory) wasmMem = ex[n];
+        return r;
+      });
+    };
+  });
+  function memText() {
+    var s = "wasm " + (wasmMem ? Math.round(wasmMem.buffer.byteLength / 1048576) : "?") + " MB";
+    if (performance.memory) s += "  js " + Math.round(performance.memory.usedJSHeapSize / 1048576) + " MB";
+    return s;
+  }
+  var KEY = "meridian-last-beat";
+  var died = null;
+  try { died = localStorage.getItem(KEY); localStorage.removeItem(KEY); } catch (e) {}
+  window.addEventListener("pagehide", function () { try { localStorage.removeItem(KEY); } catch (e) {} clearInterval(beat); });
+  var beat = setInterval(function () {
+    try { localStorage.setItem(KEY, new Date().toISOString() + "  " + memText()); } catch (e) {}
+  }, 2000);
   // ?debug: a small overlay with the sizes the browser reports, for layout bugs on phones.
   if (q.has("debug")) {
     var box = document.createElement("div");
@@ -59,7 +87,8 @@
         "  dpr real " + real + " used " + dpr +
         "\ncanvas " + (c ? c.width + "x" + c.height + " css " + Math.round(r.width) + "x" + Math.round(r.height) + " at " + Math.round(r.left) + "," + Math.round(r.top) : "none") +
         "\nstandalone " + (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches) +
-        "\n" + (window.godotFit || "godot: not reported yet");
+        "\n" + (window.godotFit || "godot: not reported yet") +
+        "\n" + memText() + (died ? "\nlast page died: " + died : "");
     }, 500);
   }
   var t0 = Date.now();
@@ -78,7 +107,8 @@
   document.addEventListener("visibilitychange", function () { send("visibility", document.visibilityState); });
   var frames = 0;
   (function tick() { frames++; requestAnimationFrame(tick); })();
-  setInterval(function () { send("heartbeat", Math.round(frames / 5) + " fps"); frames = 0; }, 5000);
+  setInterval(function () { send("heartbeat", Math.round(frames / 5) + " fps, " + memText()); frames = 0; }, 5000);
+  if (died) send("died", "the last page ended without pagehide (killed?); its last beat: " + died);
   var hooked = setInterval(function () {
     var c = document.querySelector("canvas");
     if (!c) return;
