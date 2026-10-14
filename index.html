@@ -148,7 +148,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":28473104,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":28473952,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
@@ -277,6 +277,35 @@ const engine = new Engine(GODOT_CONFIG);
 		initializing = false;
 	}
 
+	// A new build downloads in the background but would wait until every tab and the
+	// home-screen app are closed, which on an iPhone is almost never (Mike kept getting an
+	// old build, 2026-10-13). Once the game is running, a downloaded build takes over, to be
+	// used from the next launch. Never earlier: taking over mid-load mixed the new build's
+	// files with the old engine and the game hung on a dark screen.
+	function takeUpdate() {
+		if (!('serviceWorker' in navigator)) {
+			return;
+		}
+		navigator.serviceWorker.getRegistration().then((reg) => {
+			if (!reg) {
+				return;
+			}
+			const take = (w) => w && w.postMessage('claim');
+			if (reg.waiting && navigator.serviceWorker.controller) {
+				take(reg.waiting);
+			}
+			reg.addEventListener('updatefound', () => {
+				const w = reg.installing;
+				w.addEventListener('statechange', () => {
+					if (w.state === 'installed' && navigator.serviceWorker.controller) {
+						take(w);
+					}
+				});
+			});
+			reg.update();
+		}).catch(() => {});
+	}
+
 	const missing = Engine.getMissingFeatures({
 		threads: GODOT_THREADS_ENABLED,
 	});
@@ -313,30 +342,6 @@ const engine = new Engine(GODOT_CONFIG);
 			displayFailureNotice(missingMsg + missing.join('\n'));
 		}
 	} else {
-		// A new build downloads in the background but would wait until every tab and the
-		// home-screen app are closed, which on an iPhone is almost never (Mike kept getting an
-		// old build, 2026-10-13). Once it's downloaded, take over at once: it's used from the
-		// next launch, without reloading a game in progress.
-		if ('serviceWorker' in navigator) {
-			navigator.serviceWorker.getRegistration().then((reg) => {
-				if (!reg) {
-					return;
-				}
-				const take = (w) => w && w.postMessage('claim');
-				if (reg.waiting && navigator.serviceWorker.controller) {
-					take(reg.waiting);
-				}
-				reg.addEventListener('updatefound', () => {
-					const w = reg.installing;
-					w.addEventListener('statechange', () => {
-						if (w.state === 'installed' && navigator.serviceWorker.controller) {
-							take(w);
-						}
-					});
-				});
-				reg.update();
-			}).catch(() => {});
-		}
 		setStatusMode('progress');
 		engine.startGame({
 			'onProgress': function (current, total) {
@@ -346,6 +351,7 @@ const engine = new Engine(GODOT_CONFIG);
 			},
 		}).then(() => {
 			setStatusMode('hidden');
+			takeUpdate();
 		}, displayFailureNotice);
 	}
 }());
