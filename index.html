@@ -112,6 +112,24 @@ body {
 	margin-top: 0.1em;
 }
 
+/* Under the sea: how much is left, and on a first visit why it takes a moment. */
+#loadline {
+	position: absolute;
+	left: 16px;
+	right: 16px;
+	bottom: 9%;
+	text-align: center;
+	font-family: "Nunito", "Avenir Next", "Helvetica Neue", sans-serif;
+	color: #c9d6e3;
+	font-size: clamp(14px, 2.4vmin, 20px);
+	line-height: 1.5;
+}
+
+#loadline .first {
+	color: #8fa3b8;
+	font-size: clamp(13px, 2.1vmin, 17px);
+}
+
 #status-notice {
 	background-color: #5b3943;
 	border-radius: 0.5rem;
@@ -143,6 +161,7 @@ body {
 		<div id="status">
 			<canvas id="tide"></canvas>
 			<div id="wordmark"><div class="tideline">TIDELINE</div><div class="games">GAMES</div></div>
+			<div id="loadline"><div class="what"></div><div class="first"></div></div>
 			<div id="status-notice"></div>
 		</div>
 
@@ -158,6 +177,19 @@ const engine = new Engine(GODOT_CONFIG);
 	const wordmark = document.getElementById('wordmark');
 	let progress = 0;
 	let shown = 0;
+	// The download in words: "Loading 12 of 31 MB", then "Starting…". A first visit (no
+	// saved copy yet) also says why it takes a moment (Mike, 2026-10-14).
+	const loadWhat = document.querySelector('#loadline .what');
+	const loadFirst = document.querySelector('#loadline .first');
+	const firstVisit = !('serviceWorker' in navigator && navigator.serviceWorker.controller);
+	loadWhat.textContent = 'Loading Meridian…';
+	if (firstVisit) {
+		loadFirst.textContent = 'First visit: the game downloads once. After that it opens in seconds, even offline.';
+	}
+	function showBytes(current, total) {
+		const mb = (b) => Math.max(1, Math.round(b / 1048576));
+		loadWhat.textContent = current >= total ? 'Starting…' : `Loading ${mb(current)} of ${mb(total)} MB`;
+	}
 	const t0 = performance.now();
 	// The same drawing as ui/tide_sea.gd: horizon glow, a sun clipped by the sea, its
 	// shimmering reflection and three tide lines washing in from the left.
@@ -342,14 +374,54 @@ const engine = new Engine(GODOT_CONFIG);
 			displayFailureNotice(missingMsg + missing.join('\n'));
 		}
 	} else {
+		// Safety net: a stale saved copy can hang the start (Mike's Firefox on an old build,
+		// 2026-10-14). If the download makes no progress for STUCK_MS and the game hasn't
+		// started, clear the saved copies once and reload. Progress, not a fixed time, so a
+		// slow connection still downloading is left alone; the flag stops a loop.
+		const STUCK_MS = 45000;  // generous: compiling the engine after the download reports no progress
+		let started = false;
+		let lastProgress = -1;
+		let lastChange = Date.now();
+		const watchdog = setInterval(() => {
+			if (started) {
+				clearInterval(watchdog);
+				return;
+			}
+			if (progress !== lastProgress) {
+				lastProgress = progress;
+				lastChange = Date.now();
+				return;
+			}
+			if (Date.now() - lastChange < STUCK_MS) {
+				return;
+			}
+			clearInterval(watchdog);
+			let healed = false;
+			try {
+				healed = sessionStorage.getItem('meridian-healed') === '1';
+				sessionStorage.setItem('meridian-healed', '1');
+			} catch (e) {
+				healed = true;
+			}
+			if (healed) {
+				return;
+			}
+			const regs = 'serviceWorker' in navigator ? navigator.serviceWorker.getRegistrations() : Promise.resolve([]);
+			Promise.all([
+				regs.then((rs) => Promise.all(rs.map((r) => r.unregister()))),
+				'caches' in window ? caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))) : null,
+			]).catch(() => {}).then(() => window.location.reload());
+		}, 2000);
 		setStatusMode('progress');
 		engine.startGame({
 			'onProgress': function (current, total) {
 				if (current > 0 && total > 0) {
 					progress = Math.min(1, current / total);
+					showBytes(current, total);
 				}
 			},
 		}).then(() => {
+			started = true;
 			setStatusMode('hidden');
 			takeUpdate();
 		}, displayFailureNotice);
